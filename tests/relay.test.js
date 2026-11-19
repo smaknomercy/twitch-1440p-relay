@@ -2,7 +2,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import relay from "../relay/worker.js";
 
-const KEY = "test-key-123";
+const KEY = "test-key-1234567890";
 const ENV = { RELAY_KEY: KEY };
 const BASE = `https://relay.example.workers.dev/?key=${KEY}`;
 const USHER = "https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8";
@@ -49,9 +49,13 @@ test("rejects a wrong key", async () => {
     assert.equal(r.status, 403);
 });
 
-test("fails closed when RELAY_KEY is not set", async () => {
-    const r = await relay.fetch(post({ type: "usher", url: USHER }), {});
-    assert.equal(r.status, 403);
+test("fails closed when RELAY_KEY is missing, short or a placeholder", async () => {
+    for (const env of [{}, { RELAY_KEY: "short" }, { RELAY_KEY: "paste-a-random-key-here" }]) {
+        const key = env.RELAY_KEY || "";
+        const r = await relay.fetch(post({ type: "usher", url: USHER }, `https://relay.example.workers.dev/?key=${key}`), env);
+        assert.equal(r.status, 503, JSON.stringify(env));
+    }
+    assert.equal(calls.length, 0);
 });
 
 test("rejects non-usher hosts, including substring tricks", async () => {

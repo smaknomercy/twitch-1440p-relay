@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tests
+        run: npm run check && npm test
+
+      - name: Check manifest version matches the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(node -p "require('./extension/manifest.json').version")
+          if [ "$tag" != "$manifest" ]; then
+            echo "Tag v$tag does not match manifest version $manifest" >&2
+            exit 1
+          fi
+
+      - name: Build extension ZIP
+        run: |
+          cd extension
+          zip -r "../twitch-1440p-relay-extension-${GITHUB_REF_NAME}.zip" . -x ".*"
+
+      - name: Release notes from CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## " v " " { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          printf '\n---\nExtension only. Update the relay too: `cd relay && npx wrangler deploy`. See README.\n' >> notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "twitch-1440p-relay-extension-${GITHUB_REF_NAME}.zip" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md

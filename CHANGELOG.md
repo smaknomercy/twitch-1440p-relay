@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.2.0 — 2026-11-19
+
+Update both the extension and the relay (`cd relay && npx wrangler deploy`).
+
+- Popup: separate fields for the relay URL and key. Old settings are migrated automatically.
+- Popup: **Test relay** button shows where Twitch sees the relay, whether your login is used, and the maximum quality Twitch grants.
+- Toolbar badge per tab: `2K`, `1080` (with the reason in the tooltip) or `ERR`.
+- Logging in or out of Twitch no longer requires reloading the stream page.
+- Relay: `check` endpoint, `?vod=<id>` diagnostics, CORS for the extension popup.
+- Relay refuses to run with a missing, short (< 16 chars) or placeholder `RELAY_KEY`.
+- Deploy to Cloudflare button support (`relay/.dev.vars.example`).
+- Tests (`npm test`) and CI; releases are built automatically from tags.
+- Popup no longer loads fonts from Google.
+
 ## 3.1.0 — 2026-11-19
 
 - Relay forwards the viewer's Twitch session token, so Twitch issues a 1440p (`QUAD_HD`) token. Without it Twitch answers `AUTHZ_NOT_LOGGED_IN`.

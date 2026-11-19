@@ -53,9 +53,17 @@ function json(request, obj, status = 200) {
     });
 }
 
+const MIN_KEY_LENGTH = 16;
+
+// Missing, short or placeholder keys (e.g. left from .dev.vars.example) disable the relay.
+function hasUsableKey(env) {
+    const k = env.RELAY_KEY || "";
+    return k.length >= MIN_KEY_LENGTH && !/paste|example|change.?me/i.test(k);
+}
+
 function isAuthorized(request, env) {
     const expected = env.RELAY_KEY;
-    if (!expected) return false; // fail closed if the secret is not set
+    if (!hasUsableKey(env)) return false; // fail closed
     const provided = new URL(request.url).searchParams.get("key") || "";
     if (provided.length !== expected.length) return false;
     let diff = 0;
@@ -191,6 +199,14 @@ export default {
     async fetch(request, env) {
         if (request.method === "OPTIONS") {
             return new Response(null, { status: 204, headers: corsHeaders(request) });
+        }
+
+        if (!hasUsableKey(env)) {
+            return json(
+                request,
+                { error: `RELAY_KEY is not set or too weak. Set a random key of at least ${MIN_KEY_LENGTH} characters.` },
+                503
+            );
         }
 
         if (!isAuthorized(request, env)) {

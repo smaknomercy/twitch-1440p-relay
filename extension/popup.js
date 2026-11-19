@@ -137,6 +137,10 @@ testBtn.addEventListener("click", async () => {
             addRow("Relay", "wrong key", "bad");
             return;
         }
+        if (r.status === 503) {
+            addRow("Relay", "RELAY_KEY not set on the relay", "bad");
+            return;
+        }
         if (!r.ok) {
             addRow("Relay", `error ${r.status}`, "bad");
             return;

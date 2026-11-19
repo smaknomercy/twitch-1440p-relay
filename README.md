@@ -23,7 +23,7 @@ Twitch player (Web Worker)     Your Cloudflare Worker (US)        Twitch
 ```
 
 - `extension/hook.js` runs in the page and wraps `window.Worker`, injecting a `fetch` patch into the player's worker. Only usher `.m3u8` requests are redirected to your relay.
-- `extension/bridge.js` passes the relay URL from extension storage to the page.
+- `extension/bridge.js` passes the relay URL from extension storage to the page and reports playback status back to the extension (toolbar badge).
 - `relay/worker.js` requests a fresh token from Twitch GQL, swaps it into the usher URL and returns the playlist.
 - `relay/wrangler.toml` pins the Worker near `aws:us-east-1`. Without this, Cloudflare runs it in the data center closest to you, and Twitch sees your region again.
 
@@ -37,57 +37,96 @@ Twitch player (Web Worker)     Your Cloudflare Worker (US)        Twitch
 
 ## Setup
 
-You need a free [Cloudflare](https://dash.cloudflare.com/sign-up) account and [Node.js](https://nodejs.org) 20+ (for `wrangler`).
+You need a free [Cloudflare](https://dash.cloudflare.com/sign-up) account.
 
 ### 1. Deploy the relay
+
+**Option A — command line** (needs [Node.js](https://nodejs.org) 20+):
 
 ```bash
 git clone https://github.com/smaknomercy/twitch-1440p-relay.git
 cd twitch-1440p-relay/relay
 
-npx wrangler login     # opens the browser, click Allow
-npx wrangler deploy    # prints your Worker URL: https://twitch-relay.<you>.workers.dev
-```
-
-The US placement from `wrangler.toml` is applied on deploy. It can't be set from the dashboard code editor, so deploy with `wrangler`.
-
-### 2. Set the access key
-
-```bash
-openssl rand -hex 16          # copy the output
+npx wrangler login                  # opens the browser, click Allow
+npx wrangler deploy                 # prints https://twitch-relay.<you>.workers.dev
+openssl rand -hex 16                # copy the output
 npx wrangler secret put RELAY_KEY   # paste it when asked
 ```
 
-### 3. Check the relay
+**Option B — Deploy button** (experimental):
 
-Open in the browser (use any live channel that streams in 1440p):
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/smaknomercy/twitch-1440p-relay/tree/main/relay)
 
-```
-https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>&channel=<channel>
-```
+Cloudflare copies the repo to your GitHub account, builds the relay and asks for `RELAY_KEY`. Replace the placeholder with a random key of at least 16 characters (`openssl rand -hex 16`); the relay refuses to run with the placeholder.
 
-You should see `"egress": { "country": "US", ... }`. The `token_check` there is anonymous, so it will show `AUTHZ_NOT_LOGGED_IN` for 1440p — that's expected; the extension sends your login.
+Either way, the relay must run with the US placement from `wrangler.toml`. If you edit the code in the Cloudflare dashboard editor instead, that setting is lost and Twitch sees your own region again.
 
-### 4. Install the extension
+### 2. Install the extension
 
-1. Get the extension: use the `extension` folder from the clone, or download `twitch-1440p-relay-extension-*.zip` from [Releases](https://github.com/smaknomercy/twitch-1440p-relay/releases) and unzip it.
+1. Download `twitch-1440p-relay-extension-*.zip` from [Releases](https://github.com/smaknomercy/twitch-1440p-relay/releases) and unzip it, or use the `extension` folder from the clone.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select that folder.
-4. Pin the extension, open its popup, paste your relay URL (`https://twitch-relay.<you>.workers.dev`) and your `RELAY_KEY`, then turn it on.
-5. Reload the stream page.
+4. Pin the extension and open its popup.
+
+### 3. Connect and test
+
+1. In the popup, paste your relay URL (`https://twitch-relay.<you>.workers.dev`) and your `RELAY_KEY`.
+2. Open any Twitch stream and click **Test relay**. You should see:
+   - **Twitch sees:** `US, ...`
+   - **Logged in:** `yes`
+   - **Max quality:** `1440p`
+3. Turn the extension on and reload the stream page.
+
+The toolbar badge shows what Twitch granted on the current tab: **2K** (green), **1080** (yellow, hover for the reason) or **ERR** (the relay failed and the stream plays without it).
+
+### Updating
+
+Pull the new version, then update both parts:
+
+```bash
+git pull
+cd relay && npx wrangler deploy
+```
+
+and press ↻ on the extension in `chrome://extensions` (or load the new ZIP from Releases).
 
 ## Troubleshooting
 
-Open DevTools on the stream page (`Cmd+Option+J` / `Ctrl+Shift+J`) and filter the console by `Twitch 2K`.
+Start with **Test relay** in the popup:
+
+| Result | What to do |
+|---|---|
+| Relay: `can't reach it` | Check the relay URL. |
+| Relay: `wrong key` | The key in the popup doesn't match `RELAY_KEY`. |
+| Relay: `RELAY_KEY not set on the relay` | Set it: `npx wrangler secret put RELAY_KEY` (16+ characters). |
+| Twitch sees: not `US` | The relay isn't using the US placement. Redeploy with `npx wrangler deploy` from the `relay` folder. |
+| Logged in: `no` | Log in to Twitch in this browser. |
+| Max quality: `1080p (AUTHZ_…)` | Twitch still limits quality; the reason code says why. |
+
+If the test passes but the stream has no 1440p option, open DevTools on the stream page (`Cmd+Option+J` / `Ctrl+Shift+J`) and filter the console by `Twitch 2K`:
 
 | Console | Meaning |
 |---|---|
-| `Usher playlist via relay. Max resolution: QUAD_HD … logged in: yes` | Working. Pick 1440p in the player settings. |
-| `Max resolution: FULL_HD`, limits `AUTHZ_GEO` | The relay isn't running in the US. Redeploy with `wrangler` and check `egress` in step 3. |
-| `Max resolution: FULL_HD`, limits `AUTHZ_NOT_LOGGED_IN` | You're not logged in to Twitch, or the `auth-token` cookie wasn't found. |
-| `Relay returned 403` | The key in the popup doesn't match `RELAY_KEY`. |
+| `Usher playlist via relay. Max resolution: QUAD_HD … logged in: yes` | Working. Pick 1440p in the player settings. If it's still missing, the streamer isn't broadcasting in 1440p. |
 | `Relay returned 502 …` | Twitch rejected the token request. The message after it says why. |
 | No `Twitch 2K` lines at all | The extension is off, or the page wasn't reloaded after turning it on. |
+
+You can also check the relay without the extension: open `https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>&channel=<channel>` (or `&vod=<id>`). This check is anonymous, so it shows `AUTHZ_NOT_LOGGED_IN` for 1440p — that's expected.
+
+## Permissions
+
+- `storage` — relay URL, key and on/off state.
+- `cookies` — read Twitch's `auth-token` cookie for **Test relay**.
+- `https://www.twitch.tv/*` — run on Twitch pages.
+
+## Development
+
+```bash
+npm run check   # syntax check
+npm test        # relay and extension tests (node:test, no dependencies)
+```
+
+CI runs both on every push. Pushing a `v*` tag that matches `extension/manifest.json` builds the extension ZIP and publishes a release with notes from `CHANGELOG.md`.
 
 ## Limitations
 

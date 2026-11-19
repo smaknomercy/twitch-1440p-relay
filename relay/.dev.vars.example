@@ -1,0 +1,3 @@
+# Access key for the relay. Generate one with: openssl rand -hex 16
+# The relay refuses to work while this placeholder is set.
+RELAY_KEY=paste-a-random-key-here
