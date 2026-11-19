@@ -1,0 +1,9 @@
+name = "twitch-relay"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Run the Worker near a US cloud region, so Twitch sees a US IP
+# when issuing the playback token.
+[placement]
+region = "aws:us-east-1"
