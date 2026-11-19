@@ -78,6 +78,8 @@
 
     const TAG = "[Twitch 2K]";
     const CHANNEL = "tw2k-relay";
+    // BroadcastChannel reaches every Twitch tab; tag messages with this page's id.
+    const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const getProxy = () => document.documentElement.dataset.tw2kProxy || "";
 
     // Twitch keeps the session OAuth token in the "auth-token" cookie.
@@ -98,14 +100,15 @@
         bc.onmessage = (e) => {
             const d = e.data;
             if (!d) return;
+            if (d.pageId !== PAGE_ID) return;
             if (d.type === "status") reportToExtension(d.status);
-            if (d.type === "auth-request") bc.postMessage({ type: "auth", id: d.id, auth: getAuth() });
+            if (d.type === "auth-request") bc.postMessage({ type: "auth", pageId: PAGE_ID, id: d.id, auth: getAuth() });
         };
     } catch {}
 
     // Runs inside workers (stringified): ask the page for the current auth,
     // fall back to the value captured when the worker was created.
-    function workerAuth(channelName, snapshot) {
+    function workerAuth(channelName, pageId, snapshot) {
         let bc = null;
         let seq = 0;
         const pending = new Map();
@@ -116,7 +119,7 @@
                         bc = new BroadcastChannel(channelName);
                         bc.onmessage = (e) => {
                             const d = e.data;
-                            if (d && d.type === "auth" && pending.has(d.id)) {
+                            if (d && d.type === "auth" && d.pageId === pageId && pending.has(d.id)) {
                                 pending.get(d.id)(typeof d.auth === "string" ? d.auth : "");
                                 pending.delete(d.id);
                             }
@@ -131,7 +134,7 @@
                         clearTimeout(timer);
                         resolve(auth);
                     });
-                    bc.postMessage({ type: "auth-request", id });
+                    bc.postMessage({ type: "auth-request", pageId, id });
                 } catch {
                     resolve(snapshot);
                 }
@@ -139,12 +142,12 @@
     }
 
     // Runs inside workers (stringified): send status to the page.
-    function workerReporter(channelName) {
+    function workerReporter(channelName, pageId) {
         let bc = null;
         return (status) => {
             try {
                 bc = bc || new BroadcastChannel(channelName);
-                bc.postMessage({ type: "status", status });
+                bc.postMessage({ type: "status", pageId, status });
             } catch {}
         };
     }
@@ -184,8 +187,8 @@
 
             const code =
                 `(${installFetchPatch.toString()})(self, () => ${JSON.stringify(proxy)}, ` +
-                `(${workerAuth.toString()})(${JSON.stringify(CHANNEL)}, ${JSON.stringify(getAuth())}), ` +
-                `(${workerReporter.toString()})(${JSON.stringify(CHANNEL)}), "[Twitch 2K][worker]");\n` +
+                `(${workerAuth.toString()})(${JSON.stringify(CHANNEL)}, ${JSON.stringify(PAGE_ID)}, ${JSON.stringify(getAuth())}), ` +
+                `(${workerReporter.toString()})(${JSON.stringify(CHANNEL)}, ${JSON.stringify(PAGE_ID)}), "[Twitch 2K][worker]");\n` +
                 body;
             const wrapped = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
             super(wrapped, options);

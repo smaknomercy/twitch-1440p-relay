@@ -201,3 +201,22 @@ test("worker falls back to the captured login if the page doesn't answer", async
     await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
     assert.equal(JSON.parse(fetchCalls[0].opts.body).auth, `OAuth ${TOKEN}`);
 });
+
+test("status from another tab's player is ignored", async () => {
+    const relayHeaders = { "X-TW2K-MaxRes": "QUAD_HD", "X-TW2K-Reasons": "{}" };
+    const tabA = loadHook({ relayHeaders });
+    const BroadcastChannel = tabA.BroadcastChannel;
+
+    new tabA.page.Worker("https://assets.twitch.tv/assets/player-worker.js");
+    const { scope } = runWorkerCode(tabA.blobs.get(tabA.created[0].url).text, { BroadcastChannel, relayHeaders });
+
+    // Another tab's player posts on the same channel with its own page id
+    const foreign = new BroadcastChannel("tw2k-relay");
+    foreign.postMessage({ type: "status", pageId: "other-tab", status: { ok: true, maxRes: "FULL_HD" } });
+
+    await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
+    await new Promise((r) => setTimeout(r, 0));
+
+    assert.equal(tabA.posted.length, 1);
+    assert.equal(tabA.posted[0].data.status.maxRes, "QUAD_HD");
+});
