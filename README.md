@@ -70,10 +70,11 @@ You should see `"egress": { "country": "US", ... }`. The `token_check` there is 
 
 ### 4. Install the extension
 
-1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and select the `extension` folder.
-3. Pin the extension, open its popup, paste `https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>` and turn it on.
-4. Reload the stream page.
+1. Get the extension: use the `extension` folder from the clone, or download `twitch-1440p-relay-extension-*.zip` from [Releases](https://github.com/smaknomercy/twitch-1440p-relay/releases) and unzip it.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Click **Load unpacked** and select that folder.
+4. Pin the extension, open its popup, paste `https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>` and turn it on.
+5. Reload the stream page.
 
 ## Troubleshooting
 
