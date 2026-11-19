@@ -1,49 +1,90 @@
 // ============================================================
-// Twitch 2K Quality Unlocker — Cloudflare Worker Relay
+// Twitch 2K Quality Unlocker — Cloudflare Worker Relay (hardened)
 // ============================================================
-// Deploy this to Cloudflare Workers (free tier, 100k req/day).
-// It proxies only the small GQL token + usher playlist requests
-// through Cloudflare's edge, unlocking 2K quality options.
-// The actual video stream flows directly to the viewer.
+// Changes vs. upstream:
+//   1. Access key: requests must include ?key=<RELAY_KEY> in the URL.
+//      RELAY_KEY is stored as a Worker secret (Settings → Variables and Secrets).
+//   2. Usher URL is validated by parsed hostname, not substring match
+//      (upstream allowed fetching arbitrary URLs → open proxy / SSRF).
+//   3. GQL relay only accepts PlaybackAccessToken queries
+//      (upstream relayed any GQL query).
+//   4. Only https:// usher URLs are accepted.
+// The extension itself needs no changes: paste the Worker URL
+// with ?key=... into the popup.
 // ============================================================
 
 const TWITCH_GQL = "https://gql.twitch.tv/gql";
+const USHER_HOST = "usher.ttvnw.net";
+const DEFAULT_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Origin": "https://www.twitch.tv",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
+function json(obj, status = 200) {
+    return new Response(JSON.stringify(obj), {
+        status,
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    });
+}
+
+function isAuthorized(request, env) {
+    const expected = env.RELAY_KEY;
+    if (!expected) return false; // fail closed if the secret is not set
+    const provided = new URL(request.url).searchParams.get("key") || "";
+    if (provided.length !== expected.length) return false;
+    // Constant-time comparison
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) {
+        diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+    }
+    return diff === 0;
+}
+
+function isValidUsherUrl(raw) {
+    try {
+        const u = new URL(raw);
+        return u.protocol === "https:" && u.hostname === USHER_HOST;
+    } catch {
+        return false;
+    }
+}
+
 export default {
-    async fetch(request) {
-        // Handle CORS preflight
+    async fetch(request, env) {
         if (request.method === "OPTIONS") {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
         }
 
-        // Only accept POST
+        if (!isAuthorized(request, env)) {
+            return json({ error: "Forbidden" }, 403);
+        }
+
         if (request.method !== "POST") {
-            return new Response(
-                JSON.stringify({
-                    name: "Twitch 2K Quality Unlocker Relay",
-                    status: "running",
-                    usage: "POST with {type:'gql'|'usher', ...}",
-                }),
-                { headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-            );
+            return json({ name: "Twitch 2K relay", status: "running" });
+        }
+
+        let payload;
+        try {
+            payload = await request.json();
+        } catch {
+            return json({ error: "Invalid JSON" }, 400);
         }
 
         try {
-            const payload = await request.json();
-
-            // ---- GQL: Proxy PlaybackAccessToken request ----
+            // ---- GQL: PlaybackAccessToken only ----
             if (payload.type === "gql") {
+                if (typeof payload.body !== "string" || !payload.body.includes("PlaybackAccessToken")) {
+                    return json({ error: "Only PlaybackAccessToken is allowed" }, 400);
+                }
+
                 const headers = {
                     "Content-Type": "text/plain; charset=UTF-8",
-                    "Client-ID": payload.clientId || "kimne78kx3ncx6brgo4mv6wki5h1ko",
+                    "Client-ID": payload.clientId || DEFAULT_CLIENT_ID,
                 };
-                if (payload.auth && payload.auth !== "undefined" && payload.auth !== "") {
+                if (payload.auth && payload.auth !== "undefined") {
                     headers["Authorization"] = payload.auth;
                 }
                 if (payload.deviceId) {
@@ -56,31 +97,23 @@ export default {
                     body: payload.body,
                 });
 
-                const body = await resp.text();
-                return new Response(body, {
+                return new Response(await resp.text(), {
                     status: resp.status,
-                    headers: {
-                        "Content-Type": "application/json",
-                        ...CORS_HEADERS,
-                    },
+                    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
                 });
             }
 
-            // ---- Usher: Proxy playlist manifest request ----
+            // ---- Usher: playlist manifest ----
             if (payload.type === "usher") {
-                if (!payload.url || !payload.url.includes("usher.ttvnw.net")) {
-                    return new Response(
-                        JSON.stringify({ error: "Invalid usher URL" }),
-                        { status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-                    );
+                if (!isValidUsherUrl(payload.url)) {
+                    return json({ error: "Invalid usher URL" }, 400);
                 }
 
                 const resp = await fetch(payload.url, {
                     headers: { "User-Agent": "Mozilla/5.0" },
                 });
 
-                const body = await resp.text();
-                return new Response(body, {
+                return new Response(await resp.text(), {
                     status: resp.status,
                     headers: {
                         "Content-Type": resp.headers.get("Content-Type") || "application/vnd.apple.mpegurl",
@@ -89,15 +122,9 @@ export default {
                 });
             }
 
-            return new Response(
-                JSON.stringify({ error: "Unknown type. Use 'gql' or 'usher'." }),
-                { status: 400, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-            );
+            return json({ error: "Unknown type" }, 400);
         } catch (err) {
-            return new Response(
-                JSON.stringify({ error: err.message }),
-                { status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-            );
+            return json({ error: "Upstream request failed" }, 502);
         }
     },
 };

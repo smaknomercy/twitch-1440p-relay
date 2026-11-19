@@ -36,11 +36,13 @@ Browser                    Cloudflare Worker (US)         Twitch
 8. Open the file [`worker.js`](worker.js) from this repo and **copy its entire contents**
 9. **Paste** into the Cloudflare editor
 10. Click **Save and deploy** (or Ctrl+S)
-11. Your Worker URL is shown at the top — it looks like:
+11. Generate a random access key, e.g. `openssl rand -hex 16`
+12. Go to the Worker's **Settings → Variables and Secrets → Add**, choose type **Secret**, name it `RELAY_KEY` and paste the key. Deploy.
+13. Your Worker URL is shown at the top. Append your key to it:
     ```
-    https://twitch-relay.YOUR-NAME.workers.dev
+    https://twitch-relay.YOUR-NAME.workers.dev/?key=YOUR_KEY
     ```
-    **Copy this URL** — you'll need it in Step 3.
+    **Copy this URL** — you'll need it in Step 3. Without a valid key the Worker answers `403 Forbidden`, so strangers can't use it as an open proxy.
 
 > ✅ Free tier gives you **100,000 requests/day** — more than enough for personal use.
 
@@ -59,7 +61,7 @@ Browser                    Cloudflare Worker (US)         Twitch
 ### Step 3 — Configure & Use
 
 1. Click the extension icon (puzzle piece → Twitch 2K)
-2. Paste your Worker URL from Step 1 into the **Worker URL** field
+2. Paste your Worker URL **including `?key=...`** from Step 1 into the **Worker URL** field
 3. Toggle the switch **ON**
 4. **Refresh** any Twitch stream page (Ctrl+Shift+R)
 5. Click the ⚙️ gear icon on the video player → **1440p** should now appear
@@ -71,7 +73,8 @@ Browser                    Cloudflare Worker (US)         Twitch
 | Problem | Solution |
 |---------|----------|
 | No 1440p option | The streamer must be broadcasting in 1440p+. Try a known 1440p streamer. |
-| "Proxy failed" in console | Check that the Worker URL is correct and starts with `https://`. Open the URL in a browser — it should show `"status":"running"`. |
+| "Proxy failed" in console | Check that the Worker URL is correct and starts with `https://`. Open the URL (with `?key=...`) in a browser — it should show `"status":"running"`. |
+| "Proxy returned 403" | The key in the Worker URL doesn't match the `RELAY_KEY` secret. |
 | Extension not updating | Remove it from `chrome://extensions/`, then **Load unpacked** again from the folder. |
 | Still no 1440p | Your Cloudflare edge might be in a restricted region. In Cloudflare dashboard, go to Worker Settings → try enabling **Smart Placement**. |
 
