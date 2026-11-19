@@ -37,9 +37,10 @@
             const proxy = getProxy();
             if (proxy && url.includes("usher.ttvnw.net/") && url.includes(".m3u8")) {
                 try {
+                    const auth = await getAuth();
                     const r = await nativeFetch(proxy, {
                         method: "POST",
-                        body: JSON.stringify({ type: "usher", url, auth: getAuth() }),
+                        body: JSON.stringify({ type: "usher", url, auth }),
                     });
                     if (r.ok) {
                         let reasons = {};
@@ -54,7 +55,7 @@
                             "| limits:",
                             r.headers.get("X-TW2K-Reasons") || "?",
                             "| logged in:",
-                            getAuth() ? "yes" : "no"
+                            auth ? "yes" : "no"
                         );
                         return r;
                     }
@@ -90,12 +91,52 @@
         window.postMessage({ __tw2k: "status", status }, location.origin);
     }
 
+    // The page answers workers' auth requests with the current cookie,
+    // so logging in or out doesn't require a page reload.
     try {
         const bc = new BroadcastChannel(CHANNEL);
         bc.onmessage = (e) => {
-            if (e.data && e.data.type === "status") reportToExtension(e.data.status);
+            const d = e.data;
+            if (!d) return;
+            if (d.type === "status") reportToExtension(d.status);
+            if (d.type === "auth-request") bc.postMessage({ type: "auth", id: d.id, auth: getAuth() });
         };
     } catch {}
+
+    // Runs inside workers (stringified): ask the page for the current auth,
+    // fall back to the value captured when the worker was created.
+    function workerAuth(channelName, snapshot) {
+        let bc = null;
+        let seq = 0;
+        const pending = new Map();
+        return () =>
+            new Promise((resolve) => {
+                try {
+                    if (!bc) {
+                        bc = new BroadcastChannel(channelName);
+                        bc.onmessage = (e) => {
+                            const d = e.data;
+                            if (d && d.type === "auth" && pending.has(d.id)) {
+                                pending.get(d.id)(typeof d.auth === "string" ? d.auth : "");
+                                pending.delete(d.id);
+                            }
+                        };
+                    }
+                    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}-${seq++}`;
+                    const timer = setTimeout(() => {
+                        pending.delete(id);
+                        resolve(snapshot);
+                    }, 500);
+                    pending.set(id, (auth) => {
+                        clearTimeout(timer);
+                        resolve(auth);
+                    });
+                    bc.postMessage({ type: "auth-request", id });
+                } catch {
+                    resolve(snapshot);
+                }
+            });
+    }
 
     // Runs inside workers (stringified): send status to the page.
     function workerReporter(channelName) {
@@ -142,7 +183,8 @@
             }
 
             const code =
-                `(${installFetchPatch.toString()})(self, () => ${JSON.stringify(proxy)}, () => ${JSON.stringify(getAuth())}, ` +
+                `(${installFetchPatch.toString()})(self, () => ${JSON.stringify(proxy)}, ` +
+                `(${workerAuth.toString()})(${JSON.stringify(CHANNEL)}, ${JSON.stringify(getAuth())}), ` +
                 `(${workerReporter.toString()})(${JSON.stringify(CHANNEL)}), "[Twitch 2K][worker]");\n` +
                 body;
             const wrapped = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));

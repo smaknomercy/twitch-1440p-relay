@@ -92,6 +92,8 @@ function runWorkerCode(code, { BroadcastChannel, relayHeaders = {} } = {}) {
         console: { log() {}, warn() {}, error() {} },
         URL,
         BroadcastChannel,
+        setTimeout,
+        clearTimeout,
         importScripts: (u) => imported.push(u),
         fetch: async (url, opts) => {
             fetchCalls.push({ url: String(url), opts });
@@ -169,4 +171,33 @@ test("worker reports the granted quality to the page, page forwards it to the br
     assert.equal(env.posted[0].data.__tw2k, "status");
     assert.equal(env.posted[0].data.status.ok, true);
     assert.equal(env.posted[0].data.status.maxRes, "QUAD_HD");
+});
+
+test("worker asks the page for the current login on each request", async () => {
+    const env = loadHook({ cookie: "auth-token=oldtokenoldtokenoldtokenold" });
+    new env.page.Worker("https://assets.twitch.tv/assets/player-worker.js");
+    const { scope, fetchCalls } = runWorkerCode(env.blobs.get(env.created[0].url).text, {
+        BroadcastChannel: env.BroadcastChannel,
+    });
+
+    // Viewer logs in to another account after the player was created.
+    env.page.document.cookie = `auth-token=${TOKEN}`;
+    await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
+    assert.equal(JSON.parse(fetchCalls[0].opts.body).auth, `OAuth ${TOKEN}`);
+
+    // Logs out.
+    env.page.document.cookie = "";
+    await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
+    assert.equal(JSON.parse(fetchCalls[1].opts.body).auth, "");
+});
+
+test("worker falls back to the captured login if the page doesn't answer", async () => {
+    const env = loadHook();
+    new env.page.Worker("https://assets.twitch.tv/assets/player-worker.js");
+    // A bus the page is not on: nobody answers.
+    const { scope, fetchCalls } = runWorkerCode(env.blobs.get(env.created[0].url).text, {
+        BroadcastChannel: makeBus(),
+    });
+    await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
+    assert.equal(JSON.parse(fetchCalls[0].opts.body).auth, `OAuth ${TOKEN}`);
 });
