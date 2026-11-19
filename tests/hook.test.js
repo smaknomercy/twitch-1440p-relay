@@ -7,11 +7,35 @@ const HOOK_SRC = readFileSync(new URL("../extension/hook.js", import.meta.url), 
 const PROXY = "https://relay.example.workers.dev/?key=k";
 const TOKEN = "abcdefghijklmnopqrstuvwxyz0123";
 
+// In-memory BroadcastChannel shared between the fake page and worker scopes.
+function makeBus() {
+    const members = new Set();
+    return class FakeBroadcastChannel {
+        constructor(name) {
+            this.name = name;
+            this.onmessage = null;
+            members.add(this);
+        }
+        postMessage(data) {
+            for (const m of members) {
+                if (m !== this && m.name === this.name && m.onmessage) {
+                    queueMicrotask(() => m.onmessage({ data }));
+                }
+            }
+        }
+        close() {
+            members.delete(this);
+        }
+    };
+}
+
 // Minimal page environment for hook.js
-function loadHook({ proxy = PROXY, cookie = `x=1; auth-token=${TOKEN}` } = {}) {
+function loadHook({ proxy = PROXY, cookie = `x=1; auth-token=${TOKEN}`, relayHeaders = {} } = {}) {
     const blobs = new Map();
     const created = [];
     const fetchCalls = [];
+    const posted = [];
+    const BroadcastChannel = makeBus();
 
     class FakeWorker {
         constructor(url, options) {
@@ -35,7 +59,9 @@ function loadHook({ proxy = PROXY, cookie = `x=1; auth-token=${TOKEN}` } = {}) {
                 this.text = parts.join("");
             }
         },
-        location: { href: "https://www.twitch.tv/somechannel" },
+        location: { href: "https://www.twitch.tv/somechannel", origin: "https://www.twitch.tv" },
+        BroadcastChannel,
+        postMessage: (data, origin) => posted.push({ data, origin }),
         document: { cookie, documentElement: { dataset: proxy ? { tw2kProxy: proxy } : {} } },
         XMLHttpRequest: class {
             open(method, url) {
@@ -48,27 +74,28 @@ function loadHook({ proxy = PROXY, cookie = `x=1; auth-token=${TOKEN}` } = {}) {
         },
         fetch: async (url, opts) => {
             fetchCalls.push({ url: String(url), opts });
-            return { ok: true, headers: { get: () => "" } };
+            return { ok: true, headers: { get: (h) => relayHeaders[h] ?? "" } };
         },
         Worker: FakeWorker,
     };
     page.window = page;
     vm.createContext(page);
     vm.runInContext(HOOK_SRC, page);
-    return { page, blobs, created, fetchCalls, FakeWorker };
+    return { page, blobs, created, fetchCalls, posted, BroadcastChannel, relayHeaders };
 }
 
 // Run the code that hook.js generated for a worker in a fake worker scope
-function runWorkerCode(code) {
+function runWorkerCode(code, { BroadcastChannel, relayHeaders = {} } = {}) {
     const imported = [];
     const fetchCalls = [];
     const scope = {
         console: { log() {}, warn() {}, error() {} },
         URL,
+        BroadcastChannel,
         importScripts: (u) => imported.push(u),
         fetch: async (url, opts) => {
             fetchCalls.push({ url: String(url), opts });
-            return { ok: true, headers: { get: () => "" } };
+            return { ok: true, headers: { get: (h) => relayHeaders[h] ?? "" } };
         },
     };
     scope.self = scope;
@@ -123,4 +150,23 @@ test("module workers are not wrapped", () => {
     const { page, created } = loadHook();
     new page.Worker("https://assets.twitch.tv/assets/m.js", { type: "module" });
     assert.equal(created[0].url, "https://assets.twitch.tv/assets/m.js");
+});
+
+test("worker reports the granted quality to the page, page forwards it to the bridge", async () => {
+    const relayHeaders = { "X-TW2K-MaxRes": "QUAD_HD", "X-TW2K-Reasons": "{}" };
+    const env = loadHook({ relayHeaders });
+    new env.page.Worker("https://assets.twitch.tv/assets/player-worker.js");
+    const { scope } = runWorkerCode(env.blobs.get(env.created[0].url).text, {
+        BroadcastChannel: env.BroadcastChannel,
+        relayHeaders,
+    });
+
+    await scope.fetch("https://usher.ttvnw.net/api/v2/channel/hls/somechannel.m3u8");
+    await new Promise((r) => setTimeout(r, 0));
+
+    assert.equal(env.posted.length, 1);
+    assert.equal(env.posted[0].origin, "https://www.twitch.tv");
+    assert.equal(env.posted[0].data.__tw2k, "status");
+    assert.equal(env.posted[0].data.status.ok, true);
+    assert.equal(env.posted[0].data.status.maxRes, "QUAD_HD");
 });

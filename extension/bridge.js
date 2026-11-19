@@ -18,3 +18,18 @@ TW2K.load().then(({ enabled, relayUrl, relayKey }) => {
     }
     delete root.dataset.tw2kProxy;
 });
+
+// Forward playback status from hook.js to the background (toolbar badge).
+window.addEventListener("message", (e) => {
+    if (e.source !== window || !e.data || e.data.__tw2k !== "status") return;
+    const st = e.data.status || {};
+    chrome.runtime
+        .sendMessage({
+            action: "status",
+            ok: !!st.ok,
+            maxRes: String(st.maxRes || ""),
+            reasons: st.reasons && typeof st.reasons === "object" ? st.reasons : {},
+            error: String(st.error || ""),
+        })
+        .catch(() => {});
+});
