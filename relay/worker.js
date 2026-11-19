@@ -41,7 +41,7 @@ function corsHeaders(request) {
         ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Expose-Headers": "X-TW2K-MaxRes, X-TW2K-Reasons, X-TW2K-Colo",
+        "Access-Control-Expose-Headers": "X-TW2K-MaxRes, X-TW2K-Reasons, X-TW2K-Height, X-TW2K-Colo",
         Vary: "Origin",
     };
 }
@@ -166,6 +166,15 @@ async function diagnose(request, target, auth) {
     });
 }
 
+// Highest video height listed in an HLS master playlist (0 if none).
+function maxPlaylistHeight(m3u8) {
+    let max = 0;
+    for (const m of m3u8.matchAll(/RESOLUTION=\d+x(\d+)/g)) {
+        max = Math.max(max, Number(m[1]));
+    }
+    return max;
+}
+
 async function handleUsher(request, payload) {
     const parsed = parseUsherUrl(payload.url);
     if (!parsed || (!parsed.login && !parsed.vodId)) {
@@ -183,12 +192,14 @@ async function handleUsher(request, payload) {
     const info = describeToken(t.value);
 
     const resp = await fetch(parsed.u.href, { headers: { "User-Agent": "Mozilla/5.0" } });
-    return new Response(await resp.text(), {
+    const playlist = await resp.text();
+    return new Response(playlist, {
         status: resp.status,
         headers: {
             "Content-Type": resp.headers.get("Content-Type") || "application/vnd.apple.mpegurl",
             "X-TW2K-MaxRes": info.maximum_resolution,
             "X-TW2K-Reasons": JSON.stringify(info.maximum_resolution_reasons),
+            "X-TW2K-Height": String(maxPlaylistHeight(playlist)),
             "X-TW2K-Colo": request.cf?.colo || "",
             ...corsHeaders(request),
         },

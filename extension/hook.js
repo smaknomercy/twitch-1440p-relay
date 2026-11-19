@@ -47,7 +47,12 @@
                         try {
                             reasons = JSON.parse(r.headers.get("X-TW2K-Reasons") || "{}");
                         } catch {}
-                        report({ ok: true, maxRes: r.headers.get("X-TW2K-MaxRes") || "", reasons });
+                        report({
+                            ok: true,
+                            maxRes: r.headers.get("X-TW2K-MaxRes") || "",
+                            height: Number(r.headers.get("X-TW2K-Height")) || 0,
+                            reasons,
+                        });
                         console.log(
                             tag,
                             "Usher playlist via relay. Max resolution:",

@@ -28,6 +28,7 @@ window.addEventListener("message", (e) => {
             action: "status",
             ok: !!st.ok,
             maxRes: String(st.maxRes || ""),
+            height: Number(st.height) || 0,
             reasons: st.reasons && typeof st.reasons === "object" ? st.reasons : {},
             error: String(st.error || ""),
         })

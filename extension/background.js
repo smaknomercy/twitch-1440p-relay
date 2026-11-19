@@ -24,6 +24,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 const RES_BADGE = { ULTRA_HD: "4K", QUAD_HD: "2K", FULL_HD: "1080" };
 
+function heightBadge(h) {
+    if (h >= 2160) return "4K";
+    if (h >= 1440) return "2K";
+    return String(h);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
     if (msg?.action !== "status" || !sender.tab?.id) return;
     const tabId = sender.tab.id;
@@ -35,12 +41,20 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         title = `Twitch 1440p Relay: ${msg.error || "relay error"} — playing without the relay`;
     } else {
         const unlocked = ["QUAD_HD", "ULTRA_HD"].includes(msg.maxRes);
-        text = RES_BADGE[msg.maxRes] || "?";
-        color = unlocked ? "#00A86B" : "#E6A700";
-        const reasons = [...new Set(Object.values(msg.reasons || {}).flat())].join(", ");
-        title = unlocked
-            ? `Twitch 1440p Relay: up to ${text} unlocked`
-            : `Twitch 1440p Relay: limited to ${text}${reasons ? ` (${reasons})` : ""}`;
+        const allowed = RES_BADGE[msg.maxRes] || "?";
+        if (unlocked) {
+            // Show what this stream actually offers, not just what Twitch allows.
+            text = msg.height ? heightBadge(msg.height) : allowed;
+            color = "#00A86B";
+            title = msg.height
+                ? `Twitch 1440p Relay: stream up to ${msg.height}p (Twitch allows up to ${allowed})`
+                : `Twitch 1440p Relay: up to ${allowed} unlocked`;
+        } else {
+            const reasons = [...new Set(Object.values(msg.reasons || {}).flat())].join(", ");
+            text = allowed;
+            color = "#E6A700";
+            title = `Twitch 1440p Relay: limited to ${allowed}${reasons ? ` (${reasons})` : ""}`;
+        }
     }
 
     chrome.action.setBadgeText({ tabId, text });

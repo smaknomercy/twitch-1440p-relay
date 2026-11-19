@@ -77,7 +77,7 @@ Either way, the relay must run with the US placement from `wrangler.toml`. If yo
    - **Max quality:** `1440p`
 3. Turn the extension on and reload the stream page.
 
-The toolbar badge shows what Twitch granted on the current tab: **2K** (green), **1080** (yellow, hover for the reason) or **ERR** (the relay failed and the stream plays without it).
+The toolbar badge shows the best quality the current stream offers: green (**2K**, **1080**, …) when Twitch doesn't limit you, yellow with the reason in the tooltip when it does, or **ERR** when the relay failed and the stream plays without it.
 
 ### Updating
 

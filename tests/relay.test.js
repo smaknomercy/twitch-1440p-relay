@@ -28,9 +28,17 @@ function mockTwitch({ maxRes = "QUAD_HD", reasons = {} } = {}) {
         if (url.startsWith("https://ipinfo.io/")) {
             return new Response(JSON.stringify({ country: "US", city: "Ashburn", org: "Cloudflare" }));
         }
-        return new Response("#EXTM3U\n", { headers: { "Content-Type": "application/vnd.apple.mpegurl" } });
+        return new Response(PLAYLIST, { headers: { "Content-Type": "application/vnd.apple.mpegurl" } });
     };
 }
+
+const PLAYLIST = [
+    "#EXTM3U",
+    '#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=2560x1440,CODECS="hev1.1.6.L150.90.0.0.0.0"',
+    "https://video-weaver.example/1440.m3u8",
+    '#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,CODECS="avc1.64002A"',
+    "https://video-weaver.example/1080.m3u8",
+].join("\n");
 
 function post(body, url = BASE) {
     return new Request(url, { method: "POST", body: JSON.stringify(body) });
@@ -182,4 +190,10 @@ test("check retries with a known channel when the first one fails", async () => 
     const r = await relay.fetch(post({ type: "check", channel: "directory" }), ENV);
     const j = await r.json();
     assert.equal(j.token_check.maximum_resolution, "QUAD_HD");
+});
+
+test("reports the highest resolution in the playlist", async () => {
+    const r = await relay.fetch(post({ type: "usher", url: USHER }), ENV);
+    assert.equal(r.headers.get("X-TW2K-Height"), "1440");
+    assert.equal(await r.text(), PLAYLIST);
 });

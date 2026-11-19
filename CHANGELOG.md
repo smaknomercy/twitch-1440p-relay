@@ -6,7 +6,7 @@ Update both the extension and the relay (`cd relay && npx wrangler deploy`).
 
 - Popup: separate fields for the relay URL and key. Old settings are migrated automatically.
 - Popup: **Test relay** button shows where Twitch sees the relay, whether your login is used, and the maximum quality Twitch grants.
-- Toolbar badge per tab: `2K`, `1080` (with the reason in the tooltip) or `ERR`.
+- Toolbar badge per tab: the best quality the current stream offers (`2K`, `1080`, …), yellow with the reason in the tooltip if Twitch limits it, or `ERR`.
 - Logging in or out of Twitch no longer requires reloading the stream page.
 - Relay: `check` endpoint, `?vod=<id>` diagnostics, CORS for the extension popup.
 - Relay refuses to run with a missing, short (< 16 chars) or placeholder `RELAY_KEY`.

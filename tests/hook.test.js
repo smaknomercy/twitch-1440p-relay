@@ -155,7 +155,7 @@ test("module workers are not wrapped", () => {
 });
 
 test("worker reports the granted quality to the page, page forwards it to the bridge", async () => {
-    const relayHeaders = { "X-TW2K-MaxRes": "QUAD_HD", "X-TW2K-Reasons": "{}" };
+    const relayHeaders = { "X-TW2K-MaxRes": "QUAD_HD", "X-TW2K-Reasons": "{}", "X-TW2K-Height": "1440" };
     const env = loadHook({ relayHeaders });
     new env.page.Worker("https://assets.twitch.tv/assets/player-worker.js");
     const { scope } = runWorkerCode(env.blobs.get(env.created[0].url).text, {
@@ -171,6 +171,7 @@ test("worker reports the granted quality to the page, page forwards it to the br
     assert.equal(env.posted[0].data.__tw2k, "status");
     assert.equal(env.posted[0].data.status.ok, true);
     assert.equal(env.posted[0].data.status.maxRes, "QUAD_HD");
+    assert.equal(env.posted[0].data.status.height, 1440);
 });
 
 test("worker asks the page for the current login on each request", async () => {
