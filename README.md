@@ -1,31 +1,62 @@
+<div align="center">
+
+<img src="extension/icons/icon128.png" width="96" alt="">
+
 # Twitch 1440p Relay
 
-Watch Twitch streams in **1440p (2K)** from regions where Twitch limits quality to 1080p — without a VPN.
+**Watch Twitch in 1440p from regions where it's capped at 1080p — no VPN.**
 
-A small Chrome extension plus a Cloudflare Worker **you deploy yourself**. Only the master playlist goes through the Worker; the video itself streams directly from Twitch, so there's no extra latency or bandwidth cost.
+[![test](https://github.com/smaknomercy/twitch-1440p-relay/actions/workflows/test.yml/badge.svg)](https://github.com/smaknomercy/twitch-1440p-relay/actions/workflows/test.yml)
+[![release](https://img.shields.io/github/v/release/smaknomercy/twitch-1440p-relay?color=9147ff)](https://github.com/smaknomercy/twitch-1440p-relay/releases)
+[![license](https://img.shields.io/github/license/smaknomercy/twitch-1440p-relay?color=9147ff)](LICENSE)
 
-> Based on [ddaccu/twitch-2k-unlocker](https://github.com/ddaccu/twitch-2k-unlocker). The original approach stopped working once Twitch moved playlist requests into the player's Web Worker; this version is reworked to handle that and to fix a security issue in the relay.
+</div>
+
+<table>
+  <tr>
+    <th>Without the extension</th>
+    <th>With the extension</th>
+  </tr>
+  <tr>
+    <td><img src="docs/images/quality-before.png" width="360" alt="Twitch quality menu: 1440p greyed out with a location restriction notice"></td>
+    <td valign="top"><img src="docs/images/quality-after.png" width="360" alt="Twitch quality menu: 1440p60 selected"></td>
+  </tr>
+</table>
+
+A small Chrome extension plus a Cloudflare Worker **you deploy yourself**. Only the master playlist (a few KB) goes through the Worker; the video streams directly from Twitch, so there's no extra latency and no bandwidth cost.
+
+> Based on [ddaccu/twitch-2k-unlocker](https://github.com/ddaccu/twitch-2k-unlocker). The original stopped working once Twitch moved playlist requests into the player's Web Worker; this version is reworked to handle that and fixes a security issue in the relay.
 
 ## How it works
 
-Twitch decides the maximum quality when it issues the **playback access token**. The token records your IP, and for some regions it caps the stream at `FULL_HD` with reason `AUTHZ_GEO`. Twitch also only grants 1440p to **logged-in** viewers (`AUTHZ_NOT_LOGGED_IN`).
+Twitch decides the maximum quality when it issues the **playback access token**. The token records your IP, and for some regions it caps the stream at `FULL_HD` with reason `AUTHZ_GEO`. Twitch also grants 1440p only to **logged-in** viewers (`AUTHZ_NOT_LOGGED_IN`).
 
-```
-Twitch player (Web Worker)     Your Cloudflare Worker (US)        Twitch
-        │                                │                           │
-        ├─ usher playlist request ──────►│                           │
-        │                                ├─ PlaybackAccessToken ────►│  (as you, from a US IP)
-        │                                │◄─ token: QUAD_HD ─────────┤
-        │                                ├─ usher with new token ───►│
-        │◄─ master playlist with 1440p ──┤◄─ playlist ───────────────┤
-        │                                                            │
-        ├─ video segments (direct, not proxied) ────────────────────►│
+So the relay asks Twitch for the token on your behalf, from the US:
+
+```mermaid
+sequenceDiagram
+    participant P as Twitch player<br/>(your browser)
+    participant R as Your relay<br/>(Cloudflare, US)
+    participant T as Twitch
+    P->>R: master playlist request
+    R->>T: playback token (as you, from a US IP)
+    T-->>R: token: QUAD_HD
+    R->>T: master playlist with the new token
+    T-->>R: playlist incl. 1440p
+    R-->>P: playlist incl. 1440p
+    P->>T: video segments (direct, not proxied)
 ```
 
 - `extension/hook.js` runs in the page and wraps `window.Worker`, injecting a `fetch` patch into the player's worker. Only usher `.m3u8` requests are redirected to your relay.
-- `extension/bridge.js` passes the relay URL from extension storage to the page and reports playback status back to the extension (toolbar badge).
+- `extension/bridge.js` passes the relay settings to the page and reports playback status back to the extension (toolbar badge).
 - `relay/worker.js` requests a fresh token from Twitch GQL, swaps it into the usher URL and returns the playlist.
 - `relay/wrangler.toml` pins the Worker near `aws:us-east-1`. Without this, Cloudflare runs it in the data center closest to you, and Twitch sees your region again.
+
+<details>
+<summary>Proof: player stats with the extension on</summary>
+<br>
+<img src="docs/images/video-stats.png" width="480" alt="Twitch video stats: 2560x1440, 60 FPS, HEVC (hev1) codec">
+</details>
 
 > 1440p only appears if the **streamer** broadcasts in 1440p (Enhanced Broadcasting). Twitch uses HEVC for it, so your browser needs HEVC hardware decoding (Chrome on recent macOS/Windows with hardware acceleration enabled).
 
@@ -70,14 +101,24 @@ Either way, the relay must run with the US placement from `wrangler.toml`. If yo
 
 ### 3. Connect and test
 
+<img src="docs/images/popup.png" width="300" align="right" alt="Extension popup: relay URL and key, Test relay shows US, logged in, max quality">
+
 1. In the popup, paste your relay URL (`https://twitch-relay.<you>.workers.dev`) and your `RELAY_KEY`.
 2. Open any Twitch stream and click **Test relay**. You should see:
    - **Twitch sees:** `US, ...`
    - **Logged in:** `yes`
-   - **Max quality:** `1440p`
-3. Turn the extension on and reload the stream page.
+   - **Max quality:** `1440p` or `2160p`
+3. Turn **Enable bypass** on and reload the stream page.
 
-The toolbar badge shows the best quality the current stream offers: green (**2K**, **1080**, …) when Twitch doesn't limit you, yellow with the reason in the tooltip when it does, or **ERR** when the relay failed and the stream plays without it.
+The toolbar badge shows the best quality the current stream offers:
+
+<img src="docs/images/badge.png" width="180" alt="Toolbar with a green 2K badge on the extension icon">
+
+- green **2K** / **1080** / … — Twitch doesn't limit you;
+- yellow — Twitch limits quality, hover for the reason;
+- **ERR** — the relay failed and the stream plays without it.
+
+<br clear="right">
 
 ### Updating
 
