@@ -10,7 +10,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.twitch.tv/*"],
-      "js": ["bridge.js"],
+      "js": ["config.js", "bridge.js"],
       "run_at": "document_start"
     },
     {

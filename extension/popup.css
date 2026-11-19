@@ -140,7 +140,9 @@ body {
   color: #adadb8;
 }
 
-input[type="url"] {
+input[type="url"],
+input[type="password"],
+input[type="text"] {
   width: 100%;
   padding: 8px 10px;
   border-radius: 6px;
@@ -153,11 +155,11 @@ input[type="url"] {
   transition: border-color 0.2s;
 }
 
-input[type="url"]::placeholder {
+input::placeholder {
   color: #636370;
 }
 
-input[type="url"]:focus {
+input:focus {
   border-color: #9147ff;
 }
 
@@ -189,4 +191,35 @@ input[type="url"]:focus {
   font-size: 11px;
   color: #adadb8;
   line-height: 1.5;
+}
+/* ---- Key field ---- */
+
+.key-row {
+  display: flex;
+  gap: 6px;
+}
+
+.key-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+input.invalid {
+  border-color: #f55;
+}
+
+.small-btn {
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #adadb8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.small-btn:hover {
+  color: #efeff1;
+  border-color: #9147ff;
 }

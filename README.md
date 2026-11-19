@@ -73,7 +73,7 @@ You should see `"egress": { "country": "US", ... }`. The `token_check` there is 
 1. Get the extension: use the `extension` folder from the clone, or download `twitch-1440p-relay-extension-*.zip` from [Releases](https://github.com/smaknomercy/twitch-1440p-relay/releases) and unzip it.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select that folder.
-4. Pin the extension, open its popup, paste `https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>` and turn it on.
+4. Pin the extension, open its popup, paste your relay URL (`https://twitch-relay.<you>.workers.dev`) and your `RELAY_KEY`, then turn it on.
 5. Reload the stream page.
 
 ## Troubleshooting
@@ -85,7 +85,7 @@ Open DevTools on the stream page (`Cmd+Option+J` / `Ctrl+Shift+J`) and filter th
 | `Usher playlist via relay. Max resolution: QUAD_HD … logged in: yes` | Working. Pick 1440p in the player settings. |
 | `Max resolution: FULL_HD`, limits `AUTHZ_GEO` | The relay isn't running in the US. Redeploy with `wrangler` and check `egress` in step 3. |
 | `Max resolution: FULL_HD`, limits `AUTHZ_NOT_LOGGED_IN` | You're not logged in to Twitch, or the `auth-token` cookie wasn't found. |
-| `Relay returned 403` | The key in the Worker URL doesn't match `RELAY_KEY`. |
+| `Relay returned 403` | The key in the popup doesn't match `RELAY_KEY`. |
 | `Relay returned 502 …` | Twitch rejected the token request. The message after it says why. |
 | No `Twitch 2K` lines at all | The extension is off, or the page wasn't reloaded after turning it on. |
 

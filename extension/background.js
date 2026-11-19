@@ -1,49 +1,20 @@
 // ============================================================
-// Twitch 2K Quality Unlocker — Background Service Worker
+// Twitch 1440p Relay — background service worker
 // ============================================================
-// Manages state + injects content script on Twitch pages.
-// The actual bypass is done by content.js (fetch interception).
+// Keeps the toolbar badge in sync with the on/off setting.
 // ============================================================
 
-// ---- Startup: restore saved state ----
+importScripts("config.js");
 
-chrome.runtime.onInstalled.addListener(async () => {
-    const data = await chrome.storage.local.get(["enabled", "proxyUrl"]);
-    updateBadge(!!data.enabled);
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-    const data = await chrome.storage.local.get(["enabled"]);
-    updateBadge(!!data.enabled);
-});
-
-function updateBadge(enabled) {
+async function refreshBadge() {
+    const { enabled } = await TW2K.load();
     chrome.action.setBadgeText({ text: enabled ? "ON" : "" });
     chrome.action.setBadgeBackgroundColor({ color: "#9147FF" });
 }
 
-// ---- Messages from popup / content script ----
+chrome.runtime.onInstalled.addListener(refreshBadge);
+chrome.runtime.onStartup.addListener(refreshBadge);
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    (async () => {
-        if (msg.action === "enable") {
-            await chrome.storage.local.set({
-                enabled: true,
-                proxyUrl: msg.proxyUrl || "",
-            });
-            updateBadge(true);
-            sendResponse({ ok: true });
-        } else if (msg.action === "disable") {
-            await chrome.storage.local.set({ enabled: false });
-            updateBadge(false);
-            sendResponse({ ok: true });
-        } else if (msg.action === "getStatus") {
-            const data = await chrome.storage.local.get(["enabled", "proxyUrl"]);
-            sendResponse({
-                enabled: !!data.enabled,
-                proxyUrl: data.proxyUrl || "",
-            });
-        }
-    })();
-    return true;
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && "enabled" in changes) refreshBadge();
 });

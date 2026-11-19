@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=340" />
-  <title>Twitch 2K Unlocker</title>
+  <title>Twitch 1440p Relay</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 
@@ -12,7 +12,7 @@
   <div class="container">
     <div class="header">
       <img src="icons/icon48.png" alt="Icon" class="logo" />
-      <h1>Twitch 2K</h1>
+      <h1>Twitch 1440p</h1>
     </div>
 
     <div class="status-bar">
@@ -30,11 +30,19 @@
     </div>
 
     <div class="control-group">
-      <label for="proxy-url" class="input-label">Worker URL</label>
-      <input type="url" id="proxy-url" placeholder="https://twitch-relay.you.workers.dev/?key=..." spellcheck="false" />
+      <label for="relay-url" class="input-label">Relay URL</label>
+      <input type="url" id="relay-url" placeholder="https://twitch-relay.you.workers.dev" spellcheck="false" />
+    </div>
+
+    <div class="control-group">
+      <label for="relay-key" class="input-label">Relay key</label>
+      <div class="key-row">
+        <input type="password" id="relay-key" placeholder="RELAY_KEY" spellcheck="false" autocomplete="off" />
+        <button type="button" id="key-reveal" class="small-btn">Show</button>
+      </div>
       <p class="hint">
-        Deploy your own <a href="#" id="setup-link">relay</a>
-        and paste its URL with <code>?key=...</code> here.
+        Deploy your own <a href="#" id="setup-link">relay</a>, then paste its URL and key.
+        Never use someone else's relay: it receives your Twitch session.
       </p>
     </div>
 
@@ -46,6 +54,7 @@
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script src="popup.js"></script>
 </body>
 
