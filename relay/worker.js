@@ -10,7 +10,8 @@
 // Security:
 //   - requires ?key=<RELAY_KEY> (Worker secret)
 //   - only https://usher.ttvnw.net URLs are accepted
-//   - no viewer credentials are sent or needed
+//   - the viewer's Twitch OAuth token (needed for 1440p) is forwarded
+//     to Twitch GQL only; it is never logged or stored
 // ============================================================
 
 const TWITCH_GQL = "https://gql.twitch.tv/gql";
@@ -27,7 +28,7 @@ const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "https://www.twitch.tv",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Expose-Headers": "X-TW2K-MaxRes, X-TW2K-Colo",
+    "Access-Control-Expose-Headers": "X-TW2K-MaxRes, X-TW2K-Reasons, X-TW2K-Colo",
 };
 
 function json(obj, status = 200) {
@@ -62,10 +63,13 @@ function parseUsherUrl(raw) {
     return { u, login: live ? decodeURIComponent(live[1]) : null, vodId: vod ? vod[1] : null };
 }
 
-async function fetchToken({ login, vodId }, deviceId) {
+const AUTH_RE = /^OAuth [a-z0-9]{20,64}$/i;
+
+async function fetchToken({ login, vodId }, deviceId, auth) {
     const isLive = !!login;
     const headers = { "Content-Type": "text/plain; charset=UTF-8", "Client-ID": CLIENT_ID };
     if (deviceId) headers["Device-ID"] = deviceId;
+    if (auth && AUTH_RE.test(auth)) headers["Authorization"] = auth;
 
     const resp = await fetch(TWITCH_GQL, {
         method: "POST",
@@ -160,13 +164,16 @@ export default {
                 deviceId = JSON.parse(parsed.u.searchParams.get("token") || "{}").device_id || "";
             } catch {}
 
-            const t = await fetchToken(parsed, deviceId);
+            const t = await fetchToken(parsed, deviceId, payload.auth);
             parsed.u.searchParams.set("token", t.value);
             parsed.u.searchParams.set("sig", t.signature);
 
             let maxRes = "";
+            let reasons = "";
             try {
-                maxRes = JSON.parse(t.value).maximum_resolution || "";
+                const v = JSON.parse(t.value);
+                maxRes = v.maximum_resolution || "";
+                reasons = JSON.stringify(v.maximum_resolution_reasons || {});
             } catch {}
 
             const resp = await fetch(parsed.u.href, { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -175,6 +182,7 @@ export default {
                 headers: {
                     "Content-Type": resp.headers.get("Content-Type") || "application/vnd.apple.mpegurl",
                     "X-TW2K-MaxRes": maxRes,
+                    "X-TW2K-Reasons": reasons,
                     "X-TW2K-Colo": request.cf?.colo || "",
                     ...CORS_HEADERS,
                 },

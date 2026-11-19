@@ -14,7 +14,7 @@
     "use strict";
 
     // Self-contained: this function is also stringified into workers.
-    function installFetchPatch(scope, getProxy, tag) {
+    function installFetchPatch(scope, getProxy, getAuth, tag) {
         if (scope.__tw2kPatched) return;
         scope.__tw2kPatched = true;
 
@@ -36,15 +36,17 @@
                 try {
                     const r = await nativeFetch(proxy, {
                         method: "POST",
-                        body: JSON.stringify({ type: "usher", url }),
+                        body: JSON.stringify({ type: "usher", url, auth: getAuth() }),
                     });
                     if (r.ok) {
                         console.log(
                             tag,
                             "Usher playlist via relay. Max resolution:",
                             r.headers.get("X-TW2K-MaxRes") || "?",
-                            "| relay colo:",
-                            r.headers.get("X-TW2K-Colo") || "?"
+                            "| limits:",
+                            r.headers.get("X-TW2K-Reasons") || "?",
+                            "| logged in:",
+                            getAuth() ? "yes" : "no"
                         );
                         return r;
                     }
@@ -66,8 +68,14 @@
     const TAG = "[Twitch 2K]";
     const getProxy = () => document.documentElement.dataset.tw2kProxy || "";
 
+    // Twitch keeps the session OAuth token in the "auth-token" cookie.
+    function getAuth() {
+        const m = document.cookie.match(/(?:^|;\s*)auth-token=([^;]+)/);
+        return m ? "OAuth " + decodeURIComponent(m[1]) : "";
+    }
+
     // ---- 1. Main window ----
-    installFetchPatch(window, getProxy, TAG);
+    installFetchPatch(window, getProxy, getAuth, TAG);
 
     // ---- 2. Workers ----
     const NativeWorker = window.Worker;
@@ -100,7 +108,7 @@
             }
 
             const code =
-                `(${installFetchPatch.toString()})(self, () => ${JSON.stringify(proxy)}, "[Twitch 2K][worker]");\n` +
+                `(${installFetchPatch.toString()})(self, () => ${JSON.stringify(proxy)}, () => ${JSON.stringify(getAuth())}, "[Twitch 2K][worker]");\n` +
                 body;
             const wrapped = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
             super(wrapped, options);
