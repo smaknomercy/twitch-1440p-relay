@@ -223,3 +223,60 @@ input.invalid {
   color: #efeff1;
   border-color: #9147ff;
 }
+
+/* ---- Relay test ---- */
+
+.wide-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(145, 71, 255, 0.4);
+  background: rgba(145, 71, 255, 0.15);
+  color: #efeff1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wide-btn:hover:not(:disabled) {
+  background: rgba(145, 71, 255, 0.3);
+}
+
+.wide-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.test-result {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.test-result li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.test-result .label {
+  color: #adadb8;
+}
+
+.test-result .ok {
+  color: #00f593;
+}
+
+.test-result .bad {
+  color: #f55;
+}
+
+.test-result .warn {
+  color: #ffd166;
+}
+
+.test-result[hidden] {
+  display: none;
+}

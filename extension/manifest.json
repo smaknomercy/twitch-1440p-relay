@@ -4,7 +4,7 @@
   "homepage_url": "https://github.com/smaknomercy/twitch-1440p-relay",
   "version": "3.1.0",
   "description": "Unlock 1440p on Twitch: fetches the playback token and master playlist through your own Cloudflare Worker relay.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "cookies"],
   "host_permissions": ["https://www.twitch.tv/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [

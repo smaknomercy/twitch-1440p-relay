@@ -113,3 +113,69 @@ test("status endpoint reports egress and token check", async () => {
     assert.equal(j.egress.country, "US");
     assert.equal(j.token_check.maximum_resolution, "FULL_HD");
 });
+
+test("check endpoint uses the viewer's auth and reports login", async () => {
+    mockTwitch({ maxRes: "QUAD_HD" });
+    // make the mocked token look logged in
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+        if (String(url).startsWith("https://gql.twitch.tv/")) {
+            calls.push({ url: String(url), opts });
+            const value = JSON.stringify({ maximum_resolution: "QUAD_HD", user_id: 42 });
+            return new Response(JSON.stringify({ data: { streamPlaybackAccessToken: { value, signature: "S" } } }));
+        }
+        return realFetch(url, opts);
+    };
+    const r = await relay.fetch(post({ type: "check", channel: "somechannel", auth: "OAuth abcdefghijklmnopqrstuvwxyz0123" }), ENV);
+    const j = await r.json();
+    assert.equal(j.token_check.maximum_resolution, "QUAD_HD");
+    assert.equal(j.token_check.logged_in, true);
+    const gql = calls.find((c) => c.url.startsWith("https://gql.twitch.tv/"));
+    assert.equal(gql.opts.headers["Authorization"], "OAuth abcdefghijklmnopqrstuvwxyz0123");
+    assert.equal(JSON.parse(gql.opts.body).variables.login, "somechannel");
+});
+
+test("check endpoint falls back to a default channel for bad input", async () => {
+    await relay.fetch(post({ type: "check", channel: "../evil" }), ENV);
+    const gql = calls.find((c) => c.url.startsWith("https://gql.twitch.tv/"));
+    assert.equal(JSON.parse(gql.opts.body).variables.login, "twitch");
+});
+
+test("GET diagnostics support VODs", async () => {
+    const r = await relay.fetch(new Request(`${BASE}&vod=123456`), ENV);
+    const j = await r.json();
+    assert.equal(j.token_check.maximum_resolution, "QUAD_HD");
+    const vars = JSON.parse(calls.find((c) => c.url.startsWith("https://gql")).opts.body).variables;
+    assert.equal(vars.isVod, true);
+    assert.equal(vars.vodID, "123456");
+});
+
+test("CORS allows twitch.tv and the extension, not other sites", async () => {
+    const origins = {
+        "https://www.twitch.tv": "https://www.twitch.tv",
+        "chrome-extension://abcdef": "chrome-extension://abcdef",
+        "https://evil.example": null,
+    };
+    for (const [origin, expected] of Object.entries(origins)) {
+        const r = await relay.fetch(new Request(BASE, { method: "OPTIONS", headers: { Origin: origin } }), ENV);
+        assert.equal(r.headers.get("Access-Control-Allow-Origin"), expected, origin);
+    }
+});
+
+test("check retries with a known channel when the first one fails", async () => {
+    calls = [];
+    globalThis.fetch = async (url, opts = {}) => {
+        url = String(url);
+        calls.push({ url, opts });
+        if (url.startsWith("https://gql.twitch.tv/")) {
+            const login = JSON.parse(opts.body).variables.login;
+            if (login !== "twitch") return new Response(JSON.stringify({ data: { streamPlaybackAccessToken: null } }));
+            const value = JSON.stringify({ maximum_resolution: "QUAD_HD", user_id: 1 });
+            return new Response(JSON.stringify({ data: { streamPlaybackAccessToken: { value, signature: "S" } } }));
+        }
+        return new Response(JSON.stringify({ country: "US" }));
+    };
+    const r = await relay.fetch(post({ type: "check", channel: "directory" }), ENV);
+    const j = await r.json();
+    assert.equal(j.token_check.maximum_resolution, "QUAD_HD");
+});
