@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Twitch 2K Quality Unlocker",
+  "name": "Twitch 1440p Relay",
+  "homepage_url": "https://github.com/smaknomercy/twitch-1440p-relay",
   "version": "3.1.0",
   "description": "Unlock 1440p on Twitch: fetches the playback token and master playlist through your own Cloudflare Worker relay.",
   "permissions": ["storage"],

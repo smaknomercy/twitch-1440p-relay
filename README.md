@@ -1,101 +1,104 @@
-# Twitch 2K Quality Unlocker
+# Twitch 1440p Relay
 
-Chrome extension that unlocks 2K (1440p) quality on Twitch **without VPN**.
+Watch Twitch streams in **1440p (2K)** from regions where Twitch limits quality to 1080p — without a VPN.
 
-## How It Works
+A small Chrome extension plus a Cloudflare Worker **you deploy yourself**. Only the master playlist goes through the Worker; the video itself streams directly from Twitch, so there's no extra latency or bandwidth cost.
 
-Twitch restricts 1440p quality by region. This extension proxies **only the playlist metadata** (~2 KB) through a Cloudflare Worker you deploy — the actual video stream flows directly with **zero latency impact**.
+> Based on [ddaccu/twitch-2k-unlocker](https://github.com/ddaccu/twitch-2k-unlocker). The original approach stopped working once Twitch moved playlist requests into the player's Web Worker; this version is reworked to handle that and to fix a security issue in the relay.
+
+## How it works
+
+Twitch decides the maximum quality when it issues the **playback access token**. The token records your IP, and for some regions it caps the stream at `FULL_HD` with reason `AUTHZ_GEO`. Twitch also only grants 1440p to **logged-in** viewers (`AUTHZ_NOT_LOGGED_IN`).
 
 ```
-Browser                    Cloudflare Worker (US)         Twitch
-  │                              │                          │
-  ├─ PlaybackAccessToken req ───►├─ forward to GQL ────────►│
-  │◄─ US-region token ──────────┤◄─ token response ────────┤
-  │                              │                          │
-  ├─ Usher playlist req ────────►├─ forward to usher ──────►│
-  │◄─ playlist w/ 1440p ────────┤◄─ playlist response ─────┤
-  │                              │                          │
-  ├─ Video stream (direct, no proxy) ──────────────────────►│
+Twitch player (Web Worker)     Your Cloudflare Worker (US)        Twitch
+        │                                │                           │
+        ├─ usher playlist request ──────►│                           │
+        │                                ├─ PlaybackAccessToken ────►│  (as you, from a US IP)
+        │                                │◄─ token: QUAD_HD ─────────┤
+        │                                ├─ usher with new token ───►│
+        │◄─ master playlist with 1440p ──┤◄─ playlist ───────────────┤
+        │                                                            │
+        ├─ video segments (direct, not proxied) ────────────────────►│
 ```
 
-> **Note:** 1440p only appears if the **streamer** broadcasts in 1440p+ with Enhanced Broadcasting enabled.
+- `extension/hook.js` runs in the page and wraps `window.Worker`, injecting a `fetch` patch into the player's worker. Only usher `.m3u8` requests are redirected to your relay.
+- `extension/bridge.js` passes the relay URL from extension storage to the page.
+- `relay/worker.js` requests a fresh token from Twitch GQL, swaps it into the usher URL and returns the playlist.
+- `relay/wrangler.toml` pins the Worker near `aws:us-east-1`. Without this, Cloudflare runs it in the data center closest to you, and Twitch sees your region again.
 
----
+> 1440p only appears if the **streamer** broadcasts in 1440p (Enhanced Broadcasting). Twitch uses HEVC for it, so your browser needs HEVC hardware decoding (Chrome on recent macOS/Windows with hardware acceleration enabled).
 
-## Setup Guide
+## Security — read this
 
-### Step 1 — Deploy the Relay Worker (free, 5 min)
+- **The relay receives your Twitch session token.** It's needed to get a 1440p token on your behalf. The relay forwards it to `gql.twitch.tv` only and never logs or stores it. **Only ever use a relay you deployed yourself.** Never paste someone else's Worker URL into the extension.
+- The relay requires an access key (`?key=...`). Without it, it answers `403`, so nobody else can use your Worker or your quota.
+- The relay only accepts `https://usher.ttvnw.net` URLs (checked by parsed hostname) and only issues `PlaybackAccessToken` queries.
 
-1. Go to [**dash.cloudflare.com/sign-up**](https://dash.cloudflare.com/sign-up) and create a free account
-2. In the left sidebar, click **Compute** → **Workers & Pages**
-3. Click the blue **Create application** button (top right)
-4. Click **Start with Hello World!**
-5. Name it `twitch-relay` → click **Deploy**
-6. You'll land on the Worker's dashboard. Click **Edit code** (top right)
-7. **Delete all** the default code in the editor
-8. Open the file [`worker.js`](worker.js) from this repo and **copy its entire contents**
-9. **Paste** into the Cloudflare editor
-10. Click **Save and deploy** (or Ctrl+S)
-11. Generate a random access key, e.g. `openssl rand -hex 16`
-12. Go to the Worker's **Settings → Variables and Secrets → Add**, choose type **Secret**, name it `RELAY_KEY` and paste the key. Deploy.
-13. Your Worker URL is shown at the top. Append your key to it:
-    ```
-    https://twitch-relay.YOUR-NAME.workers.dev/?key=YOUR_KEY
-    ```
-    **Copy this URL** — you'll need it in Step 3. Without a valid key the Worker answers `403 Forbidden`, so strangers can't use it as an open proxy.
+## Setup
 
-> ✅ Free tier gives you **100,000 requests/day** — more than enough for personal use.
+You need a free [Cloudflare](https://dash.cloudflare.com/sign-up) account and [Node.js](https://nodejs.org) 20+ (for `wrangler`).
 
----
+### 1. Deploy the relay
 
-### Step 2 — Install the Extension
+```bash
+git clone https://github.com/smaknomercy/twitch-1440p-relay.git
+cd twitch-1440p-relay/relay
 
-1. Download the latest `.zip` from [**Releases**](https://github.com/ddaccu/twitch-2k-unlocker/releases)
-2. Extract the ZIP to any folder
-3. Open Chrome → go to `chrome://extensions/`
-4. Enable **Developer mode** (toggle in the top right)
-5. Click **Load unpacked** → select the extracted folder
+npx wrangler login     # opens the browser, click Allow
+npx wrangler deploy    # prints your Worker URL: https://twitch-relay.<you>.workers.dev
+```
 
----
+The US placement from `wrangler.toml` is applied on deploy. It can't be set from the dashboard code editor, so deploy with `wrangler`.
 
-### Step 3 — Configure & Use
+### 2. Set the access key
 
-1. Click the extension icon (puzzle piece → Twitch 2K)
-2. Paste your Worker URL **including `?key=...`** from Step 1 into the **Worker URL** field
-3. Toggle the switch **ON**
-4. **Refresh** any Twitch stream page (Ctrl+Shift+R)
-5. Click the ⚙️ gear icon on the video player → **1440p** should now appear
+```bash
+openssl rand -hex 16          # copy the output
+npx wrangler secret put RELAY_KEY   # paste it when asked
+```
 
----
+### 3. Check the relay
+
+Open in the browser (use any live channel that streams in 1440p):
+
+```
+https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>&channel=<channel>
+```
+
+You should see `"egress": { "country": "US", ... }`. The `token_check` there is anonymous, so it will show `AUTHZ_NOT_LOGGED_IN` for 1440p — that's expected; the extension sends your login.
+
+### 4. Install the extension
+
+1. Open `chrome://extensions` and turn on **Developer mode**.
+2. Click **Load unpacked** and select the `extension` folder.
+3. Pin the extension, open its popup, paste `https://twitch-relay.<you>.workers.dev/?key=<YOUR_KEY>` and turn it on.
+4. Reload the stream page.
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| No 1440p option | The streamer must be broadcasting in 1440p+. Try a known 1440p streamer. |
-| "Proxy failed" in console | Check that the Worker URL is correct and starts with `https://`. Open the URL (with `?key=...`) in a browser — it should show `"status":"running"`. |
-| "Proxy returned 403" | The key in the Worker URL doesn't match the `RELAY_KEY` secret. |
-| Extension not updating | Remove it from `chrome://extensions/`, then **Load unpacked** again from the folder. |
-| Still no 1440p | Your Cloudflare edge might be in a restricted region. In Cloudflare dashboard, go to Worker Settings → try enabling **Smart Placement**. |
+Open DevTools on the stream page (`Cmd+Option+J` / `Ctrl+Shift+J`) and filter the console by `Twitch 2K`.
 
----
+| Console | Meaning |
+|---|---|
+| `Usher playlist via relay. Max resolution: QUAD_HD … logged in: yes` | Working. Pick 1440p in the player settings. |
+| `Max resolution: FULL_HD`, limits `AUTHZ_GEO` | The relay isn't running in the US. Redeploy with `wrangler` and check `egress` in step 3. |
+| `Max resolution: FULL_HD`, limits `AUTHZ_NOT_LOGGED_IN` | You're not logged in to Twitch, or the `auth-token` cookie wasn't found. |
+| `Relay returned 403` | The key in the Worker URL doesn't match `RELAY_KEY`. |
+| `Relay returned 502 …` | Twitch rejected the token request. The message after it says why. |
+| No `Twitch 2K` lines at all | The extension is off, or the page wasn't reloaded after turning it on. |
 
-## Files
+## Limitations
 
-```
-├── manifest.json       Extension config (Manifest V3)
-├── background.js       Service worker — state management
-├── content.js          Injects page.js into Twitch pages
-├── page.js             Fetch interceptor — routes metadata through proxy
-├── popup.html/css/js   Extension popup UI
-├── worker.js           Cloudflare Worker relay (deploy separately)
-└── icons/              Extension icons
-```
+- Twitch can change its player or token checks at any time and break this.
+- The relay's token is requested from a different IP than yours. It works today, but Twitch could start enforcing a match.
+- Bypassing regional restrictions may go against Twitch's Terms of Service. Use at your own risk.
 
 ## Credits
 
-Inspired by [TTV LOL PRO](https://github.com/younesaassila/ttv-lol-pro) and [K-Twitch-Bypass](https://github.com/Kwabang/K-Twitch-Bypass).
+- Original extension: [ddaccu/twitch-2k-unlocker](https://github.com/ddaccu/twitch-2k-unlocker)
+- Ideas from [TTV LOL PRO](https://github.com/younesaassila/ttv-lol-pro) and [K-Twitch-Bypass](https://github.com/Kwabang/K-Twitch-Bypass)
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

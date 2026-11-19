@@ -61,6 +61,6 @@ function updateStatusText(enabled) {
 setupLink.addEventListener("click", (e) => {
     e.preventDefault();
     chrome.tabs.create({
-        url: "https://github.com/ddaccu/twitch-2k-unlocker#deploy-the-relay-worker",
+        url: "https://github.com/smaknomercy/twitch-1440p-relay#setup",
     });
 });
